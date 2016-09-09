@@ -1,0 +1,142 @@
+#!/usr/bin/env perl
+
+=head1 NAME
+
+merge-csv - Merge Form field values from PDF files into a single CSV file
+
+This script performs the opposite task to merge-pdf.
+
+=head1 USAGE
+
+$ merge-csv <csv filename> <fieldlist> <pdf filename> [...]
+
+$ find . -name \*.pdf -print | merge-csv <csv filename> <fieldlist> [-]
+
+<csv filename> is the path to a csv file w/header rows to contain data from
+the PDF form files.
+
+<fieldlist> Field names in the PDF form will match the csv field headers. 
+
+<pdf filename> one or more pdf filenames on the command line or if no pdf
+filenames given, or simply the filename '-' then read pdf filenames from
+standard input
+
+=head1 Example
+
+C<$ merge-csv class2016-results.csv 'Assessment,studentId,studentName,Total Marks' *.pdf>
+
+The above example will result in the class2016-results.csv file being generated
+with a header row given as:
+
+C<Assessment,studentId,studentName,Total Marks>
+
+and then all subsequent rows, being the values extracted from each pdf file
+passed to the script via command line (*.pdf).  
+
+If there were 6 PDF files, output might look like:
+
+Assessment,studentId,studentName,"Total Marks"
+"Cardiac Arrest",S01234567,"Barry Allen",0
+"Conscious Patient",S01234567,"Barry Allen",0
+"Cardiac Arrest",S12345678,"Luke Skywalker",22.5
+"Conscious Patient",S12345678,"Luke Skywalker",30
+"Cardiac Arrest",S23456789,"James Bond",17.25
+"Conscious Patient",S23456789,"James Bond",49
+
+
+=head1 DESCRIPTION
+
+This script will merge the contents of form fields from multiple PDF documents
+into a single csv file. A header row will be created, based on the input
+provided on the command line. Then values of like-named fields within each PDF
+file will be extracted and stored in the csv file. There will be one row per PDF
+file.
+
+To identify a 'type' of PDF form, add a hidden text field with default values.
+
+PDF Filenames can be passed on the command line, or if there are too many or are
+deeply nested in a directory structure, alternately filenames can be provided on
+standard input.
+
+=head1 LICENSE
+
+L<GPLv3|https://www.gnu.org/licenses/gpl-3.0.en.html>
+Copyright 2015-2016 Damien Clark, L<https://damos.world>
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL DAMIEN CLARK BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+=cut
+
+use strict ;
+
+use FindBin ;
+use local::lib "$FindBin::Bin/extlib" ;
+use File::Basename ;
+use Text::CSV ;
+use CAM::PDF ;
+
+#Get the csv filename from command line
+my $csvFile = shift(@ARGV) or die "No csv file specified on command line" ;
+
+#Get fieldlist to be extracted from PDF files
+my $fieldList = shift(@ARGV) or die "No fieldlist specified" ;
+my @fieldList = split(/\s*,\s*/,$fieldList) ;
+
+#Get list of all pdf files remaining on the command line
+my @pdfFiles = @ARGV ;
+
+#If no pdf files given on command line, or pdf file given as - then read
+#from standard input
+@pdfFiles = <> unless(@pdfFiles and $pdfFiles[0] ne '-') ;
+
+#Create an instance of Text::CSV
+my $csv = Text::CSV->new ( { binary => 1 } )  # should set binary attribute.
+	or die "Cannot use CSV: ".Text::CSV->error_diag () ;
+
+#Set to UNIX end of line - Excel can cope
+$csv->eol("\n") ;
+
+#Open our csv file for reading
+open my $fh, ">:encoding(utf8)", $csvFile or die "$csvFile: $!" ;
+
+#Set header fields
+my @headers = @fieldList ;
+$csv->column_names(@headers) ;
+$csv->print($fh,\@headers) ;
+
+#using csv object, read line from csv file, and load values into arrayref $row
+foreach my $pdfFile (@pdfFiles)
+{
+	chomp $pdfFile ;
+	#Open PDF file
+	my $pdf = CAM::PDF->new($pdfFile) or die "Unable to open file '$pdfFile'" ;
+	
+	#Extract out all the fields required into an array
+	my @row ;
+	foreach my $field (@fieldList)
+	{
+		my $fieldObject = $pdf->getFormField($field) ;
+		unless(defined $fieldObject)
+		{
+			warn "Field '$field' missing from file $pdfFile" ;
+			next ;
+		}
+		my $dict = $pdf->getFormFieldDict($pdf->getFormField($field)) ;
+		push @row,$dict->{V}->{value} ;
+	}
+	#Write the array to the csv file
+	$csv->print($fh,\@row) ;
+}
+	
+close $fh ;
+
+#And we are done!

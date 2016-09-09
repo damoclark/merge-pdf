@@ -1,0 +1,278 @@
+#!/usr/bin/env perl
+
+
+
+=head1 NAME
+
+join-csv - Join rows from two csv files using a unique field common to both
+
+=head1 USAGE
+
+$ join-csv <csv filename1> <csv filename2> <filename1field>:<filename2field> [
+<output csv> | - ]
+
+<csv filename1> is the path to first csv file to join. It must contain a header
+row. Fields from this csv file will be added to the output in the same order
+they appear in the original, and will appear before fields of <csv filename2>
+
+<csv filename2> is the second csv file to join with. It has the same
+requirements as file 1. Fields will retain order but be added to end of fields
+from <csv filename1>
+
+<filename1field>:<filename2field> specifies the field name from each csv file on
+which to test for equality for joining. The equality test is conducted
+alphanumerically and case-insensitively. The field for filename1 is given first,
+before the field for filename2. They are separated by a full colon. For example:
+
+csv-file1-fieldname:csv-file2-fieldname
+
+Any shell special characters (such as spaces) will need to be escaped or quoted.
+
+<output csv> If a path to a filename is specified, the joined results will
+be written to that filename.  Otherwise, if the filename is given as '-' or
+no filename is given at all, the resulting joined results will be sent to
+standard output.
+
+=head1 Example
+
+Given file C<class2016-assignment1-results.csv> as:
+
+name,studentid,result
+Fred Smith,s0000008,99
+Sally Jacks,s0000007,94
+John Oxford,s0000009,47
+Mary Sale,s0000010,91
+Joseph Banks,s0000004,19
+
+and file C<class2016-assignment2-results.csv> as:
+
+name,id,result
+Mary Sale,S0000010,100
+Fred Smith,S0000008,90
+Sally Jacks,S0000007,44
+John Oxford,S0000009,77
+
+If we run:
+
+C<$ join-csv class2016-assignment1-results.csv class2016-assignment1-results.csv
+studentid:id class2016-results.csv>
+
+then C<class2016-results.csv> will contain:
+
+name,studentid,result,name,id,result
+"Sally Jacks",S0000007,94,"Sally Jacks",S0000007,44
+"Fred Smith",S0000008,99,"Fred Smith",S0000008,90
+"John Oxford",S0000009,47,"John Oxford",S0000009,77
+"Mary Sale",S0000010,91,"Mary Sale",S0000010,100
+"Joseph Banks",s0000004,19,,,
+
+The capitalisation does not matter on the field that is being used to join.
+
+The extra row in assignment1 for Joseph was still merged, but had no values
+from assignment2 csv file because there was no row for him there. If additional
+rows were to exist in class2016-assignment2-results.csv, they too would be
+added at the bottom, but would only contain values from file2.
+
+=head1 DESCRIPTION
+
+This script takes a file path to two separate csv files. A field name given in
+the header of each csv file that contains values that are unique to each csv
+but common to both csv files can be specified as a basis for joining.
+
+The csv files need not be sorted on the given joining fields,
+however the values for the joining field in each csv file must all be unique
+on each row.
+
+=head1 LICENSE
+
+L<GPLv3|https://www.gnu.org/licenses/gpl-3.0.en.html>
+Copyright 2015-2016 Damien Clark, L<https://damos.world>
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL DAMIEN CLARK BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+=cut
+
+use strict ;
+
+use FindBin ;
+use local::lib "$FindBin::Bin/extlib" ;
+use Text::CSV ;
+
+
+#Get the csv filename from command line
+my $csvFile1 = shift(@ARGV) or die "No csv file specified on command line" ;
+my $csvFile2 = shift(@ARGV) or die "No second csv file specified on command line" ;
+
+my $fields = shift(@ARGV)
+	or die "No fields specified for merging of form: field1:field2 where field1 is from file 1 and field2 from file2" ;
+
+#Store the field to join on from each file
+my ($fieldFile1,$fieldFile2) = split(/\s*:\s*/,$fields) ;
+
+#Get the csv filename to output to
+my $csvFileOut = shift(@ARGV) ;
+
+#Create an instance of Text::CSV for file1
+my $csv1 = Text::CSV->new ( { binary => 1 } )  # should set binary attribute.
+	or die "Cannot use CSV: ".Text::CSV->error_diag () ;
+
+#Create an instance of Text::CSV for file1
+my $csv2 = Text::CSV->new ( { binary => 1 } )  # should set binary attribute.
+	or die "Cannot use CSV: ".Text::CSV->error_diag () ;
+
+my $csvOut = Text::CSV->new ( { binary => 1 } )  # should set binary attribute.
+	or die "Cannot use CSV: ".Text::CSV->error_diag () ;
+	
+#Set to UNIX end of line - Excel can cope
+$csvOut->eol("\n") ;
+
+#Open our csv file1 for reading
+open my $fh1, "<:encoding(utf8)", $csvFile1 or die "$csvFile1: $!" ;
+
+#Open our csv file2 for reading
+open my $fh2, "<:encoding(utf8)", $csvFile2 or die "$csvFile2: $!" ;
+
+my $fhOut ;
+if(defined $csvFileOut and $csvFileOut ne '-')
+{
+	#Open our csv output for writing
+	open $fhOut, ">:encoding(utf8)", $csvFileOut or die "$csvFileOut: $!" ;
+}
+elsif(!defined($csvFileOut) or $csvFileOut eq '-')
+{
+	#Otherwise just write to standard out
+	$fhOut = *STDOUT ;
+}
+
+#Get headers file1
+my $headers1 = $csv1->getline($fh1) ;
+$csv1->column_names(@$headers1) ;
+
+#Get headers file2
+my $headers2 = $csv2->getline($fh2) ;
+$csv2->column_names(@$headers2) ;
+
+#Output headers
+my $headersOutput = [] ;
+push @$headersOutput,@$headers1,@$headers2 ;
+$csvOut->column_names(@$headersOutput) ;
+$csvOut->print($fhOut,$headersOutput) ;
+
+#Read in entire file1
+my $arrayFile1 = $csv1->getline_hr_all($fh1) ;
+
+#Read in entire file2
+my $arrayFile2 = $csv2->getline_hr_all($fh2) ;
+
+#Sort file1
+my @arrayFile1 = sort({lc($a->{$fieldFile1}) cmp lc($b->{$fieldFile1})} @$arrayFile1) ;
+#Sort file2
+my @arrayFile2 = sort({lc($a->{$fieldFile2}) cmp lc($b->{$fieldFile2})} @$arrayFile2) ;
+
+my @unmatchedFile1 ;
+my @unmatchedFile2 ;
+
+#Merge file1 and file2
+my $row1 = '' ;
+my $row2 = '' ;
+my $compare = 0 ;
+while(@arrayFile1 or @arrayFile2)
+{
+	#If extraneous file 1 (-1)
+	#if($compare < 0 or !defined($row2))
+	if($compare < 0)
+	{
+		#Fetch another row
+		$row1 = shift(@arrayFile1) ;
+	}
+	#If extraneous file 2 (+1)
+	#elsif($compare > 0 or !defined($row1))
+	elsif($compare > 0)
+	{
+		#Fetch another row
+		$row2 = shift(@arrayFile2) ;
+	}
+	#We need to pull back both rows this time
+	else
+	{
+		$row1 = shift(@arrayFile1) ;
+		$row2 = shift(@arrayFile2) ;
+	}
+	
+	if(!defined($row1) or !defined($row2))
+	{
+		print "row1 or row2 undefined\n" ;
+	}
+	
+	#If one csv file is at the end, reverse comparison order so keep reading
+	#from csv that still has rows
+	if(!defined($row1) or !defined($row2))
+	{
+		$compare = lc($row2->{$fieldFile2}) cmp lc($row1->{$fieldFile1}) ;
+	}
+	else
+	{
+		#print "comparing: $row1->{$fieldFile1} == $row2->{$fieldFile2}\n" ;
+		$compare = lc($row1->{$fieldFile1}) cmp lc($row2->{$fieldFile2}) ;
+	}
+	
+	#Output if they match
+	#If extraneous file 1 (-1)
+	#if($compare < 0 or !defined($row2))
+	if($compare < 0)
+	{
+		#Add to list for file1 to output at the end
+		push @unmatchedFile1,$row1 ;
+	}
+	#If extraneous file 2 (+1)
+	#elsif($compare > 0 or !defined($row1))
+	elsif($compare > 0)
+	{
+		#Add to list for file2 to output at the end
+		push @unmatchedFile2,$row2 ;
+	}
+	else
+	{
+		#Output matched row
+		my $output = orderedHash($headers1,$row1) ;
+		orderedHash($headers2,$row2,$output) ;
+		$csvOut->print($fhOut,$output) ;
+	}
+}
+
+#Pop all unmatched rows at the bottom
+foreach my $row (@unmatchedFile1) #File1 first
+{
+	my $output = orderedHash($headers1,$row) ;
+	orderedHash($headers2,{},$output) ; #{} because no records in file2
+	$csvOut->print($fhOut,$output) ;
+}
+foreach my $row (@unmatchedFile2)
+{
+	my $output = orderedHash($headers1,{}) ; #{} because no records in file1
+	orderedHash($headers2,$row,$output) ;
+	$csvOut->print($fhOut,$output) ;
+}
+
+sub orderedHash
+{
+	my $headers = shift ; #Arrayref
+	my $rec = shift ; #Hashref
+	my $a = shift || [] ; #Arrayref
+	
+	foreach my $fieldName (@$headers)
+	{
+		push @$a,$rec->{$fieldName} ;
+	}
+	return $a ;
+}
+

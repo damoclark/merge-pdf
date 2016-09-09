@@ -1,0 +1,244 @@
+#!/usr/bin/env perl
+
+=head1 NAME
+
+merge-pdf - Merge csv file data into PDF form files
+
+This script performs the opposite task to merge-csv.
+
+=head1 USAGE
+
+$ merge-pdf <csv filename> <destination path> <pdf filename> [...]
+
+<csv filename> is the path to a csv file w/header rows containing data to be
+merged into the PDF form files.
+
+Field names in the PDF form files must match the csv field headers. 
+
+The <destination path> is where the merged PDF form files will be saved. The
+<destination path> can be templated to use values from the csv file.
+
+
+=head1 Example
+
+C<$ merge-pdf class2016.csv /tmp/2016/%campus%/%className%/%studentName%-%pdf% rubric.pdf>
+
+The above example will result in the pdf file rubric.pdf having like-named
+fields filled with rows from class2016.csv and for each row in the csv file, all
+the PDF files will be written out to /tmp/2016/%campus%/%className%/ directory,
+where %campus% will be substituted for the value of the campus field in the
+given row, and likewise the classname value. The resulting PDF file will be
+named %studentName%-%pdf% where %studentName% will be substituted for the value
+of the studentName field in the given row, and %pdf% will be substituted with
+the original name of the pdf file, which in this case is "rubric.pdf".
+
+C</tmp/2016/ROCKHAMPTON/LAB1/Fred Smith-rubric.pdf>
+
+=head1 DESCRIPTION
+
+This script takes a csv file, one or more pdf filenames with form fields, and
+a destination directory as command line arguments.
+
+For each row in the csv file, the script will merge like-named field values
+into each pdf form file, and write a merged copy of all pdf files named into
+the destination path.
+
+The destination path itself can be composed of values from the csv file, as well
+as the original name of the PDF file being merged.  This ensures that a unique
+destination filename can be be generated for each combination of row in the CSV
+file and PDF file on the command line.
+
+=head2 CSV FILE
+
+The CSV File must contain a header row, that gives the name of each field in
+the file.  The CSV File can use double-quotes to escape any special characters
+in a field such as a comma or a carriage return.
+
+=head2 PDF FILES
+
+The script can take one or more PDF filenames on the command line.  For each
+row in the CSV file, a merged copy of each PDF file will be created.
+
+For example:
+
+A CSV file containing:
+student_id,student_name,class_name
+S12345678,Fred Smith,Class1
+S87654321,Joanna Carpenter,Class2
+
+two PDF files: report1.pdf and report2.pdf
+
+and the following command:
+
+$ merge-pdf students.csv /tmp report1.pdf report2.pdf
+
+Will generate 4 PDF files:
+
+Fred Smith_report1.pdf
+Fred Smith_report2.pdf
+Joanna Carpenter_report1.pdf
+Joanna Carpenter_report2.pdf
+
+=head2 DESTINATION PATH
+
+The <destination path> is where the merged PDF form files will be saved. The
+<destination path> can be templated to use values from the csv file.
+
+The syntax for doing this is as follows:
+	
+	%fieldname%
+
+The special template field %pdf% can be used to represent the original filename
+of the PDF file/s.  If %pdf% is not present in the <destination path>, then
+the original filename is appended to the <destination path> unchanged. Make sure
+that the destination path is unique for each row in the CSV file, or the script
+will error.
+
+If the %pdf% field is located somewhere in the path, other than the end, then
+as a convenience, the extension is removed from the filename.  This means
+that the pdf filename can be used as a directory name in the path of the
+file, and have the extension removed.  E.g.
+
+$ merge-pdf students.csv /tmp/2016/%pdf%/%studentName%.pdf report1.pdf report2.pdf
+
+Will result in:
+
+/tmp/2016/report1/Fred Smith.pdf
+/tmp/2016/report2/Fred Smith.pdf
+
+See further examples above.
+
+=head1 LICENSE
+
+L<GPLv3|https://www.gnu.org/licenses/gpl-3.0.en.html>
+Copyright 2015-2016 Damien Clark, L<https://damos.world>
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL DAMIEN CLARK BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+=cut
+
+use strict ;
+
+use FindBin ;
+use local::lib "$FindBin::Bin/extlib" ;
+use File::Spec ;
+use File::Path "make_path" ;
+use File::Basename ;
+use Text::CSV ;
+use CAM::PDF ;
+
+#Open csv file
+
+#Extract id (coursecode), studentId, studentName, staffName, preferred_email_address, campus, className
+
+#Get the first csv file from command line
+my $csvFile = shift(@ARGV) or die "No csv file specified on command line" ;
+
+#Get destination path for created files
+my $destPathTemplate = shift(@ARGV) or die "No destination path specified" ;
+
+#Get list of all pdf files remaining on the command line
+my @pdfFiles = @ARGV or die "No pdf files specified on command line" ;
+
+
+#Create an instance of Text::CSV
+my $csv = Text::CSV->new ( { binary => 1 } )  # should set binary attribute.
+	or die "Cannot use CSV: ".Text::CSV->error_diag () ;
+
+#Open our csv file for reading
+open my $fh, "<:encoding(utf8)", $csvFile or die "$csvFile: $!" ;
+
+#Get header fields
+my $headers = $csv->getline($fh) ;
+$csv->column_names(@$headers) ;
+#using csv object, read line from csv file, and load values into arrayref $row
+while (my $row = $csv->getline_hr($fh))
+{
+	#Copy and merge each pdf file with csv file fields
+	foreach my $pdfFile (@pdfFiles)
+	{
+		#Get just the filename
+		my $basePdfFile = fileparse($pdfFile) ;
+
+		#Make a copy of this row
+		my %data = %$row ;
+		#Add the filename of the current PDF file to the row data (for pdf field)
+		$data{'pdf'} = $basePdfFile ;
+		#Resolve the templated destination path with row from CSV
+		my $destFile = calc_path($destPathTemplate,\%data) ;
+		
+		#If a file already exists, then barf - something is wrong
+		die "File: $destFile already exists"
+			if(-e $destFile) ;
+			
+		#Get just the directory for our destination file and create it if not exist
+		my $destDir = get_dir($destFile) ;
+		make_path($destDir) unless(-e "$destDir") ;
+		
+		#If we don't have the directory for our destination path, then barf
+		die "$destDir not a directory" unless(-d "$destDir") ;
+
+		#Lets do the merge of fields
+		my $pdf = CAM::PDF->new($pdfFile) ;
+		#Get list of fields found in the PDF file
+		my @pdfFields = $pdf->getFormFieldList() ;
+		
+		#Merge from the CSV
+		my %formData ;
+		foreach my $field (@pdfFields)
+		{
+			$formData{$field} = $row->{$field} if(exists $row->{$field});
+		}
+		$pdf->fillFormFields(%formData) ;
+		$pdf->preserveOrder() ;
+		$pdf->cleanoutput($destFile) ;
+		print "merge $pdfFile -> $destFile\n" ;
+	}
+}
+$csv->eof or $csv->error_diag() ;
+close $fh ;
+
+sub calc_path
+{
+	my $dir = shift ;
+	my $data = shift ;
+
+	#If there is no %pdf% string in the directory template, then we must
+	#append the PDF filename to the end of the path
+	$dir =~ s/\/?$/\/%pdf%/
+		if($dir !~ m/%pdf%/) ;
+
+	#Strip off the extension, if %pdf% isn't at the end of the file path
+	$data->{pdf} = fileparse($data->{pdf},qr/\.[^.]*/i)
+		if($dir !~ m/%pdf%$/) ;
+
+	foreach my $field (keys %$data)
+	{
+		my $val = $data->{$field} ;
+		$dir =~ s/%$field%/$val/g ;
+	}
+	
+	#Are there any fields in the path that weren't found in the data? If so barf
+	my @missing = ($dir =~ m/%[^%]+%/g) ;
+	die "Missing fields from CSV file: " . join(',',@missing) if(@missing) ;
+	
+	return $dir ;
+}
+
+sub get_dir
+{
+	my $path = shift ;
+	
+	my @s = fileparse($path) ;
+	return $s[1] ;
+}
+
