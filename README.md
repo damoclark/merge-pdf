@@ -31,13 +31,15 @@ coalesced into a csv file using merge-csv from the pdf files.<br/>
 
 The suite of tools interact as given in the following illustration:
 ```
-                   /- PDF-\
-                  /        \
-         merge-pdf--- PDF---merge-csv----join-csv --> Final grades/marks csv file --> Upload back to Moodle
-                  \        /             /
-                   \- PDF-/             /
-                                       /
-Downloaded Moodle Grading Worksheet-/
+                                        ...
+                                     /- PDF-\
+                                    /        \
+       PDF Template------ merge-pdf --- PDF--- merge-csv----join-csv --> Final grades/marks csv file --> Upload back to Moodle
+                         /          \        /             /
+                        /            \- PDF-/             /
+                       /                ...              /
+ Grading CSV Worksheet-----------------------------------
+ (Downloaded from Moodle)
 ```
 
 # Contributions #
