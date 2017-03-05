@@ -57,7 +57,7 @@ Once you have it on your local computer, you need to install the
 cpan module to your computer using:
 
 ```bash
-$ sudo cpan install local::lib
+$ sudo ./cpanm install local::lib
 ```
 
 This is the only global cpan installed module required, as merge-pdf uses a
