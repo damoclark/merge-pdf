@@ -70,7 +70,7 @@ two PDF files: report1.pdf and report2.pdf
 
 and the following command:
 
-$ merge-pdf students.csv /tmp report1.pdf report2.pdf
+$ merge-pdf students.csv /tmp/%student_name%_%pdf% report1.pdf report2.pdf
 
 Will generate 4 PDF files:
 
@@ -212,10 +212,10 @@ sub calc_path
 	my $dir = shift ;
 	my $data = shift ;
 
-	#If there is no %pdf% string in the directory template, then we must
-	#append the PDF filename to the end of the path
-	$dir =~ s/\/?$/\/%pdf%/
-		if($dir !~ m/%pdf%/) ;
+	#If there is no %pdf% string in the directory template, and directory template
+	#ends with '/' then we must append the PDF filename to the end of the path
+	$dir .= '%pdf%'
+		if($dir !~ m/%pdf%/ and $dir =~ m/\/$/) ;
 
 	#Strip off the extension, if %pdf% isn't at the end of the file path
 	$data->{pdf} = fileparse($data->{pdf},qr/\.[^.]*/i)

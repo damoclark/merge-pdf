@@ -149,7 +149,7 @@ two PDF files: ```report1.pdf``` and ```report2.pdf```
 and the following command:
 
 ```bash
-$ merge-pdf students.csv /tmp report1.pdf report2.pdf
+$ merge-pdf students.csv /tmp/%student_name%_%pdf% report1.pdf report2.pdf
 ```
 
 Will generate 4 PDF files:
@@ -169,10 +169,10 @@ The syntax for doing this is as follows:
 	%fieldname%
 
 The special template field %pdf% can be used to represent the original filename
-of the PDF file/s.  If %pdf% is not present in the <destination path>, then
-the original filename is appended to the <destination path> unchanged. Make sure
-that the destination path is unique for each row in the CSV file, or the script
-will error.
+of the PDF file/s.  If %pdf% is not present in the <destination path>, and the
+destination path ends with a `/`, then the original filename is appended to the
+<destination path> unchanged. Make sure that the destination path is unique for
+each row in the CSV file, or the script will error.
 
 If the %pdf% field is located somewhere in the path, other than the end, then
 as a convenience, the extension is removed from the filename.  This means
